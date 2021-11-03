@@ -16,13 +16,17 @@ namespace EMGUCV
     public partial class Form1 : Form
     {
         VideoCapture capture;
-        static readonly CascadeClassifier cascadeClassifier = new CascadeClassifier("haarcascade_frontalface_alt.xml");
+        static readonly CascadeClassifier eyeClassifier = new CascadeClassifier("haarcascade_eye_tree_eyeglasses.xml");
+        static readonly CascadeClassifier faceClassifier = new CascadeClassifier("haarcascade_frontalface_alt.xml");
         bool is_trained = false;
         bool is_snap = false;
         List<Mat> TrainedFaces = new List<Mat>();
         List<int> PersonLabel = new List<int>();
+        List<string> PersonName = new List<string>();
         EigenFaceRecognizer recognizer;
-        Mat m=new Mat();
+        Mat m = new Mat();
+        int picCount = 0;
+        string username = "";
         public Form1()
         {
             InitializeComponent();
@@ -32,31 +36,16 @@ namespace EMGUCV
         {
             try
             {
+                //Get from Webcam
                 capture.Retrieve(m);
-                var image = m.ToBitmap();
+                Image<Bgr, byte> resultImage = m.ToImage<Bgr, byte>();
 
-                //Face Detection
-                Rectangle[] faces = cascadeClassifier.DetectMultiScale(m, 1.1, 4);
+                //Face Detection Rectangle
+                Rectangle[] faces = faceClassifier.DetectMultiScale(m, 1.3, 4);
+                Rectangle[] eyes = eyeClassifier.DetectMultiScale(m, 1.3, 4);
                 foreach (var r in faces)
                 {
-                    using (Graphics graphics = Graphics.FromImage(image))
-                    {
-                        using (Pen pen = new Pen(Color.Red, 1))
-                        {
-                            graphics.DrawRectangle(pen, r);
-                            //CvInvoke.PutText(m,"Face",new Point(10,r.Height-10),Emgu.CV.CvEnum.FontFace.HersheySimplex,1.0,new Bgr(Color.Red).MCvScalar);
-                        }
-                        pictureBox1.Image = image;
-                    }
-
-                    //Face Recognition
-                    Image<Bgr, byte> resultImage = m.ToImage<Bgr, byte>();
                     resultImage.ROI = r;
-                    pictureBox2.SizeMode = PictureBoxSizeMode.StretchImage;
-                    if (pictureBox2.Image == null)
-                    {
-                        pictureBox2.Image = resultImage.ToBitmap();
-                    }
 
                     //Snap Picture
                     if (is_snap)
@@ -66,25 +55,38 @@ namespace EMGUCV
                         {
                             Directory.CreateDirectory(path);
                         }
-                        for (int i = 0; i < 50; i++)
-                        {
-                            resultImage.Resize(200, 200, Emgu.CV.CvEnum.Inter.Cubic).Save(path + @"\Mike_" + i +".jpg");
-                        }
-                        MessageBox.Show("Snap Finished!");
-                        is_snap = false;
+                        resultImage.Resize(200, 200, Emgu.CV.CvEnum.Inter.Cubic).Save(path + @"\" + textBox1.Text + "_" + picCount + ".jpg");
+                        picCount++;
                     }
 
-                    if(is_trained)
+                    //If loaded train model
+                    if (is_trained)
                     {
-                        Image<Gray, byte> grayFaceResult = resultImage.Convert<Gray,byte>().Resize(200,200,Emgu.CV.CvEnum.Inter.Cubic);
+                        Image<Gray, byte> grayFaceResult = resultImage.Convert<Gray, byte>().Resize(200, 200, Emgu.CV.CvEnum.Inter.Cubic);
                         var result = recognizer.Predict(grayFaceResult);
 
-                        CvInvoke.PutText(m, "Mike", new Point(r.X - 2, r.Y - 2),
-                            FontFace.HersheyComplex, 1.0, new Bgr(Color.Orange).MCvScalar);
-                        CvInvoke.Rectangle(m, r, new Bgr(Color.Green).MCvScalar, 2);
-                        pictureBox1.Image = m.ToBitmap();
+                        if (result.Label < 0)
+                        {
+                            CvInvoke.Rectangle(m, r, new Bgr(Color.Red).MCvScalar, 2);
+                        }
+                        else
+                        {
+                            CvInvoke.PutText(m, PersonName[result.Label].ToString(), new Point(r.X - 2, r.Y - 2),
+                                FontFace.HersheyComplex, 1.0, new Bgr(Color.Orange).MCvScalar);
+                            CvInvoke.Rectangle(m, r, new Bgr(Color.Green).MCvScalar, 2);
+                        }
+                    }
+                    // Not using trained model
+                    else
+                    {
+                        CvInvoke.Rectangle(m, r, new Bgr(Color.Red).MCvScalar, 1);
                     }
                 }
+                foreach (var y in eyes)
+                {
+                    CvInvoke.Rectangle(m, y, new Bgr(Color.Blue).MCvScalar, 2);
+                }
+                pictureBox1.Image = m.ToBitmap();
             }
             catch (Exception ex)
             {
@@ -131,26 +133,36 @@ namespace EMGUCV
 
         private void snapToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            is_snap = true;
+            if (!is_snap)
+            {
+                is_snap = true;
+            }
+            else
+            {
+                is_snap = false;
+                MessageBox.Show("Finished Snapping...");
+            }
         }
 
         private void trainToolStripMenuItem_Click(object sender, EventArgs e)
         {
             int count = 0;
-            int threshold = 7000;
+            double threshold = 7000;
             try
             {
                 var path = Directory.GetCurrentDirectory() + @"\Mike";
-                var files = Directory.GetFiles(path, "*.jpg",SearchOption.AllDirectories);
-                foreach(var f in files)
+                var files = Directory.GetFiles(path, "*.jpg", SearchOption.AllDirectories);
+                foreach (var f in files)
                 {
                     Image<Gray, byte> trainedImage = new Image<Gray, byte>(f);
                     TrainedFaces.Add(trainedImage.Mat);
                     PersonLabel.Add(count);
+                    int charLocation = Path.GetFileName(f).IndexOf('_');
+                    PersonName.Add(Path.GetFileName(f).Substring(0, charLocation));
                     count++;
                 }
-                recognizer = new EigenFaceRecognizer(count,threshold);
-                recognizer.Train( new VectorOfMat(TrainedFaces.ToArray()), new VectorOfInt(PersonLabel.ToArray()));
+                recognizer = new EigenFaceRecognizer(count, threshold);
+                recognizer.Train(new VectorOfMat(TrainedFaces.ToArray()), new VectorOfInt(PersonLabel.ToArray()));
                 is_trained = true;
                 MessageBox.Show("Model Trained!");
             }
