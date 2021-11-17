@@ -136,6 +136,9 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="hand.jpg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <None Include="haarcascade_eye_tree_eyeglasses.xml">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
